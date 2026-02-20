@@ -18,6 +18,10 @@ export default function RunView() {
     if (!runId) return;
     const fetchRun = async () => {
       const res = await fetch(`/api/run/${runId}`);
+      if (!res.ok) {
+        setLoading(false);
+        return;
+      }
       const data = await res.json();
       setRun(data);
       setLoading(false);
@@ -27,6 +31,7 @@ export default function RunView() {
     // Poll for updates
     const t = setInterval(async () => {
       const res = await fetch(`/api/run/${runId}`);
+      if (!res.ok) return;
       const data = await res.json();
       setRun(data);
       if (data?.status && data.status !== 'running') {
@@ -37,10 +42,24 @@ export default function RunView() {
     return () => clearInterval(t);
   }, [runId]);
 
-  if (loading || !run) {
+  if (loading) {
     return (
       <div className="container mx-auto px-4 py-6">
         <div>Loading run...</div>
+      </div>
+    );
+  }
+
+  if (!run || !run.steps) {
+    return (
+      <div className="container mx-auto px-4 py-6">
+        <div className="text-red-600">Run not found or invalid run data.</div>
+        <button 
+          onClick={() => router.push('/')} 
+          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
+        >
+          Back to Home
+        </button>
       </div>
     );
   }
@@ -75,7 +94,7 @@ export default function RunView() {
               st.screenshot ? (
                 <div key={idx} className="flex items-center gap-2">
                   <span className="text-xs text-gray-500">{idx + 1}</span>
-                  <img src={st.screenshot} alt={`step-${idx + 1}`} width={160} height={90} />
+                  <img src={st.screenshot} alt={`step-${idx + 1}`} width={500} height={400} />
                 </div>
               ) : null
             )}

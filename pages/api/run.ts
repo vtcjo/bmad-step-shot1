@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getScript, createRun } from '../../lib/store';
+import { startRealDriverRun } from '../../lib/runner';
 
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
@@ -29,5 +30,18 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   }
 
   const run = createRun(scriptId, steps);
+  
+  // Start the runner asynchronously (don't await - respond immediately)
+  // Wrap in try-catch to handle any synchronous errors
+  try {
+    startRealDriverRun(run).catch((err) => {
+      console.error('[API] Runner failed:', err);
+      run.status = 'failed';
+      run.logs.push(`Runner failed to start: ${err?.message ?? String(err)}`);
+    });
+  } catch (err) {
+    console.error('[API] Failed to start runner:', err);
+  }
+  
   res.status(200).json({ runId: run.id });
 }
