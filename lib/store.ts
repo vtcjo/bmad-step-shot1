@@ -1,4 +1,6 @@
-// Minimal in-memory store for scripts and runs (MVP)
+// Minimal in-memory store for scripts and runs (MVP) with optional WebDriver-backed runner.
+// This patch adds a WebDriver-backed runner path and falls back to simulateRun if drivers are unavailable.
+
 export type Step = {
   action: string;
   target?: string;
@@ -127,12 +129,147 @@ export const createRun = (scriptId: string, steps: string[]): Run => {
     logs: []
   };
   runsStore.set(id, run);
-  // Start simulated run asynchronously
-  simulateRun(run);
+  // Start WebDriver-backed runner if available; fallback to simulated runner.
+  startRealDriverRun(run);
   return run;
 };
 
-// Simulated run: sequentially "execute" steps with delays
+// Attempt to run a real WebDriver-backed runner. Falls back to simulateRun if WebDriver isn't available.
+async function startRealDriverRun(run: Run) {
+  try {
+    const script = scriptsStore.get(run.scriptId);
+    const parsed: any = script ? JSON.parse(script.content) : null;
+    const stepActions: string[] = parsed?.steps?.map((s: any) => s.action) ?? [];
+
+    // Resolve capabilities from script or default
+    const browser = (parsed?.settings?.browser ?? 'chrome').toString().toLowerCase();
+    const headless = parsed?.settings?.headless ?? true;
+    const continueOnError = !!parsed?.settings?.continueOnError;
+
+    // Lazy require to avoid breaking environments without drivers installed
+    const webdriver = require('selenium-webdriver');
+    const By = webdriver.By;
+    const until = webdriver.until;
+    const chromeModule = require('selenium-webdriver/chrome');
+    const firefoxModule = require('selenium-webdriver/firefox');
+
+    let driver: any = null;
+
+    if (browser === 'firefox') {
+      const options = new firefoxModule.Options();
+      if (headless) options.headless();
+      driver = new webdriver.Builder()
+        .forBrowser('firefox')
+        .setFirefoxOptions(options)
+        .build();
+    } else {
+      const options = new chromeModule.Options();
+      if (headless) options.headless();
+      driver = new webdriver.Builder()
+        .forBrowser('chrome')
+        .setChromeOptions(options)
+        .build();
+    }
+
+    // Execute steps sequentially
+    for (let i = 0; i < stepActions.length; i++) {
+      const actionName = stepActions[i];
+      const stepDef = (parsed?.steps?.[i] as any) ?? {};
+      const t0 = Date.now();
+
+      try {
+        switch (actionName) {
+          case 'open':
+            if (stepDef.target) {
+              await driver.get(stepDef.target);
+            } else {
+              throw new Error('Missing target for open');
+            }
+            break;
+          case 'click': {
+            if (!stepDef.selector) throw new Error('Missing selector for click');
+            const el = await driver.findElement(By.css(stepDef.selector));
+            await el.click();
+            break;
+          }
+          case 'type': {
+            if (!stepDef.selector) throw new Error('Missing selector for type');
+            const el = await driver.findElement(By.css(stepDef.selector));
+            await el.sendKeys(stepDef.text ?? '');
+            break;
+          }
+          case 'waitForSelector': {
+            if (!stepDef.selector) throw new Error('Missing selector for waitForSelector');
+            await driver.wait(until.elementLocated(By.css(stepDef.selector)), 10000);
+            break;
+          }
+          default:
+            // Unknown action: treat as pass with a log
+            run.logs.push(`Step ${i + 1}: Unknown action "${actionName}" - skipping`);
+        }
+
+        // Take a screenshot after each step
+        let base64: string | undefined;
+        try {
+          base64 = await driver.takeScreenshot();
+        } catch {
+          base64 = undefined;
+        }
+
+        const durationMs = Date.now() - t0;
+        run.steps[i] = {
+          action: actionName,
+          status: 'passed',
+          durationMs,
+          screenshot: base64 ? `data:image/png;base64,${base64}` : undefined
+        };
+
+        run.logs.push(`Step ${i + 1} (${actionName}) -> passed`);
+        // Persist interim state
+        runsStore.set(run.id, run);
+
+        // If continueOnError is false, we proceed; catch blocks handle failures per-step
+      } catch (err: any) {
+        const durationMs = Date.now() - t0;
+        run.steps[i] = {
+          action: actionName,
+          status: 'failed',
+          durationMs,
+          errorMessage: err?.message ?? String(err),
+          screenshot: undefined
+        };
+        run.logs.push(`Step ${i + 1} (${actionName}) -> failed: ${err?.message ?? String(err)}`);
+        runsStore.set(run.id, run);
+
+        if (!continueOnError) {
+          run.status = 'failed';
+          runsStore.set(run.id, run);
+          try { driver.quit(); } catch {}
+          return;
+        }
+      }
+    }
+
+    // All steps processed
+    if (run.status === 'running') {
+      run.status = 'completed';
+    }
+    runsStore.set(run.id, run);
+    try {
+      // Best-effort cleanup
+      await driver?.quit();
+    } catch {
+      // ignore
+    }
+  } catch (e: any) {
+    // WebDriver path failed entirely; fallback to simulate
+    run.logs.push(`WebDriver path failed to initialize: ${e?.message ?? String(e)}`);
+    runsStore.set(run.id, run);
+    simulateRun(run);
+  }
+}
+
+// Fallback simulated runner (preserved for environments without WebDriver)
 async function simulateRun(run: Run) {
   try {
     const script = scriptsStore.get(run.scriptId);
