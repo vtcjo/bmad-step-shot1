@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createScript, listScripts, seedExampleScript } from '../../lib/store';
+import { createScript, listScripts, seedExampleScript } from '../../../lib/store';
 
 seedExampleScript();
 

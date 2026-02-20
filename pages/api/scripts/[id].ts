@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getScript, updateScript, deleteScript } from '../../lib/store';
+import { getScript, updateScript, deleteScript } from '../../../lib/store';
 
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   const { id } = req.query;

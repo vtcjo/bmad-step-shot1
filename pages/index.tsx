@@ -31,7 +31,7 @@ export default function Home() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold">Scripts</h2>
           <Link href="/scripts/new">
-            <a className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">New Script</a>
+            <span className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">New Script</span>
           </Link>
         </div>
 
@@ -45,7 +45,7 @@ export default function Home() {
               <div className="text-xs text-gray-500 mb-2">Updated: {new Date(s.updatedAt).toLocaleString()}</div>
               <div className="flex items-center gap-2">
                 <Link href={`/scripts/${s.id}`}>
-                  <a className="px-2 py-1 bg-green-500 text-white rounded-sm text-xs">Edit</a>
+                  <span className="px-2 py-1 bg-green-500 text-white rounded-sm text-xs">Edit</span>
                 </Link>
                 <RunButton scriptId={s.id} />
               </div>
